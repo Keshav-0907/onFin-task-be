@@ -3,7 +3,15 @@ import cors from 'cors';
 import areaRouter from './routes/areaRoutes';
 import dotenv from 'dotenv';
 import chatRouter from './routes/chatRoutes';
+import { rateLimit } from 'express-rate-limit';
 
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 100,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+})
 
 dotenv.config();
 
@@ -16,14 +24,14 @@ app.use(cors({
   credentials: true
 }));
 
-app.get('/', (req, res) => {
+app.get('/', limiter, (req, res) => {
   res.json({
     message: 'Welcome to the API'
   });
 });
 
-app.use('/api/areas', areaRouter);
-app.use('/api/chat', chatRouter);
+app.use('/api/areas', limiter, areaRouter);
+app.use('/api/chat', limiter, chatRouter);
 
 app.listen(process.env.PORT, () => {
   console.log(`Server is running on port ${process.env.PORT}`);
