@@ -18,15 +18,11 @@ const aiChat = async (req, res) => {
     }
 
     const allAreas = AllAreas.map(({ geometry, ...rest }) => rest);
+
     let systemPrompt = `
-You are a helpful assistant for the Bengaluru Area Dashboard. Respond only based on the provided JSON data.
-
- Prioritize locality names when answering questions.
- If a specific area is mentioned, provide relevant data for that locality.
- If information is missing or unclear, politely ask for more details or respond with a brief apology.
- Keep all responses concise, clear, and to the point.
+You are a helpful assistant for the Bengaluru Area Dashboard. Answer questions using only the supplied data.
+Avoid mentioning "JSON", "data source", or "structured format". Just respond conversationally based on the data.
 `;
-
 
     let contextMessage = '';
     if (pinCode) {
@@ -35,28 +31,30 @@ You are a helpful assistant for the Bengaluru Area Dashboard. Respond only based
         return res.status(400).json({ error: 'Invalid Pin Code' });
       }
 
-      contextMessage = `Here are the details for pin code ${pinCode}: ${JSON.stringify(areaStats)}. 
-      And this is for all areas: ${JSON.stringify(allAreas)}`;
+      contextMessage = `Area Stats for Pin Code ${pinCode}:\n${JSON.stringify(areaStats)}\n\nOther Area Details:\n${JSON.stringify(allAreas)}`;
     } else {
-      contextMessage = `This is the complete area data: ${JSON.stringify(allAreas)}`;
+      contextMessage = `Complete Area Details:\n${JSON.stringify(allAreas)}`;
     }
 
+    // response stream strts here
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
+    const openaiMessages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: contextMessage },
+      ...chatHistory.map((chat) => ({
+        role: chat.writer === 'user' ? 'user' : 'assistant',
+        content: chat.message,
+      })),
+      { role: 'user', content: message },
+    ];
+
     const completion = await openai.chat.completions.create({
       model: 'gpt-4',
       stream: true,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'assistant', content: contextMessage },
-        { role: 'user', content: message },
-        ...chatHistory.map((chat) => ({
-          role: chat.writer,
-          content: chat.message,
-        })),
-      ],
+      messages: openaiMessages,
       max_tokens: 1000,
     });
 
@@ -79,4 +77,41 @@ You are a helpful assistant for the Bengaluru Area Dashboard. Respond only based
   }
 };
 
-export { aiChat };
+const summariseChatHistory = async (req, res) => {
+  const { chatHistory } = req.body;
+
+  if (!chatHistory || chatHistory.length === 0) {
+    return res.status(400).json({ error: 'Chat history is required' });
+  }
+
+  const systemPrompt = `
+  Summarise the following chat history within 30 words. Provide a concise summary of the conversation, highlighting key points and any important information.`
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...chatHistory.map((chat) => ({
+      role: chat.writer === 'user' ? 'user' : 'assistant',
+      content: chat.message,
+    })),
+  ];
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4',
+    messages,
+    max_tokens: 1000,
+  })
+
+  const summary = completion.choices[0].message.content;
+
+  try {
+
+    return res.status(200).json({
+      summary
+    })
+  } catch (error) {
+    console.error('Error in summariseChatHistory:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
+
+export { aiChat, summariseChatHistory };

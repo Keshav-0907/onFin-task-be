@@ -73,7 +73,7 @@ const areaStats = async (req, res) => {
         return res.status(200).json({
             message : "Area stats found",
             areaName: areaData.name,
-            areaStats
+            stats: areaStats,
         })
 
 
