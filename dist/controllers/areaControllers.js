@@ -1,52 +1,62 @@
-import AllAreas from '../data/areas.json'
-import StatsData from '../data/stats.json'
-import LockedAreas from '../data/lockedArea.json'
-import { Response, Request } from 'express'
-import { AreaStatsRequest, AreaStatsResponse, GetAllAreasResponse, ServedAreaResponse } from '../types'
-
-const getAllAreas = (req: Request, res: Response<GetAllAreasResponse>) => {
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getAllAreas = exports.areaStats = exports.servedArea = void 0;
+const areas_json_1 = __importDefault(require("../data/areas.json"));
+const stats_json_1 = __importDefault(require("../data/stats.json"));
+const lockedArea_json_1 = __importDefault(require("../data/lockedArea.json"));
+const getAllAreas = (req, res) => {
     return res.status(200).json({
         success: true,
         message: "All areas fetched successfully",
-        data: AllAreas
+        data: areas_json_1.default
     });
 };
-
-const servedArea = (req: Request, res: Response<ServedAreaResponse>) => {
+exports.getAllAreas = getAllAreas;
+const servedArea = (req, res) => {
     try {
-        const served = AllAreas.filter(area => area.isServed === true)
+        const served = areas_json_1.default.filter(area => area.isServed === true);
         res.status(200).json({
             success: true,
             message: "Served areas fetched successfully",
             data: served
-        })
-    } catch (error) {
+        });
+    }
+    catch (error) {
         res.status(500).json({
             success: false,
             message: "Internal server error",
-        })
+        });
     }
-
-}
-
-const areaStats = async (req: Request<AreaStatsRequest>, res: Response<AreaStatsResponse>) => {
+};
+exports.servedArea = servedArea;
+const areaStats = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { pinCode } = req.params;
-        const areaData = AllAreas.find(area => area.pinCode == Number(pinCode))
+        const areaData = areas_json_1.default.find(area => area.pinCode == Number(pinCode));
         if (!areaData) {
             return res.status(404).json({
                 success: false,
                 message: 'Area not found'
-            })
+            });
         }
         const isLocked = !areaData.isServed;
-
         if (isLocked) {
             try {
-                const response = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(areaData.name)}`);
-
+                const response = yield fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(areaData.name)}`);
                 if (response.ok) {
-                    const wikiData = await response.json();
+                    const wikiData = yield response.json();
                     return res.status(200).json({
                         data: {
                             isLocked: true,
@@ -58,8 +68,9 @@ const areaStats = async (req: Request<AreaStatsRequest>, res: Response<AreaStats
                         message: "Area stats found",
                         success: true,
                     });
-                } else {
-                    const fallBackData = LockedAreas.find(area => area.pinCode == pinCode)
+                }
+                else {
+                    const fallBackData = lockedArea_json_1.default.find(area => area.pinCode == pinCode);
                     if (fallBackData) {
                         return res.status(200).json({
                             data: {
@@ -72,31 +83,29 @@ const areaStats = async (req: Request<AreaStatsRequest>, res: Response<AreaStats
                             },
                             message: "Area stats found",
                             success: true,
-                        })
+                        });
                     }
                 }
-            } catch (error) {
+            }
+            catch (error) {
                 return res.status(404).json({
                     message: 'Something went wrong',
                     success: false,
-                })
-
+                });
             }
         }
-
         if (!areaData) {
             return res.status(404).json({
                 message: 'Area not found',
                 success: false,
-            })
+            });
         }
-        const areaStats = StatsData.find(area => area.pinCode == pinCode)
-
+        const areaStats = stats_json_1.default.find(area => area.pinCode == pinCode);
         if (!areaStats) {
             return res.status(404).json({
                 message: 'Area stats not found',
                 success: false,
-            })
+            });
         }
         return res.status(200).json({
             message: "Area stats found",
@@ -110,18 +119,14 @@ const areaStats = async (req: Request<AreaStatsRequest>, res: Response<AreaStats
                 areaName: areaData.name,
             },
             success: true,
-        })
-
-
-
-    } catch (error) {
+        });
+    }
+    catch (error) {
         console.error("Error fetching wiki summary:", error);
         return res.status(500).json({
             message: 'Internal server error',
             success: false,
         });
     }
-}
-
-
-export { servedArea, areaStats, getAllAreas }
+});
+exports.areaStats = areaStats;

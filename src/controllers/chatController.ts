@@ -1,7 +1,9 @@
 import AllAreas from '../data/areas.json';
 import Stats from '../data/stats.json';
 import OpenAI from 'openai';
+import { Request, Response } from 'express';
 import dotenv from 'dotenv';
+import { AiChatRequest, SummariseChatHistoryRequest, SummariseChatHistoryResponse } from '../types';
 
 dotenv.config();
 
@@ -9,7 +11,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const aiChat = async (req, res) => {
+const aiChat = async (req: Request<{}, {}, AiChatRequest>, res: Response) => {
   try {
     const { message, pinCode, chatHistory = [] } = req.body;
 
@@ -42,20 +44,21 @@ Avoid mentioning "JSON", "data source", or "structured format". Just respond con
     res.setHeader('Connection', 'keep-alive');
 
     const openaiMessages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: contextMessage },
+      { role: 'system' as const, content: systemPrompt },
+      { role: 'user' as const, content: contextMessage },
       ...chatHistory.map((chat) => ({
-        role: chat.writer === 'user' ? 'user' : 'assistant',
+        role: chat.writer === 'user' ? ('user' as const) : ('assistant' as const),
         content: chat.message,
       })),
-      { role: 'user', content: message },
+      { role: 'user' as const, content: message },
     ];
+
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4',
       stream: true,
       messages: openaiMessages,
-      max_tokens: 1000,
+      max_tokens: 500,
     });
 
     for await (const chunk of completion) {
@@ -77,11 +80,14 @@ Avoid mentioning "JSON", "data source", or "structured format". Just respond con
   }
 };
 
-const summariseChatHistory = async (req, res) => {
+const summariseChatHistory = async (req: Request<SummariseChatHistoryRequest>, res: Response<SummariseChatHistoryResponse>) => {
   const { chatHistory } = req.body;
 
   if (!chatHistory || chatHistory.length === 0) {
-    return res.status(400).json({ error: 'Chat history is required' });
+    return res.status(400).json({
+      success: false,
+      message: 'Chat history is required'
+    });
   }
 
   const systemPrompt = `
@@ -89,7 +95,7 @@ const summariseChatHistory = async (req, res) => {
 
   const messages = [
     { role: 'system', content: systemPrompt },
-    ...chatHistory.map((chat) => ({
+    ...chatHistory.map((chat: { writer: string; message: string; }) => ({
       role: chat.writer === 'user' ? 'user' : 'assistant',
       content: chat.message,
     })),
@@ -103,14 +109,26 @@ const summariseChatHistory = async (req, res) => {
 
   const summary = completion.choices[0].message.content;
 
+  if(!summary) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to generate summary'
+    })
+  }
+
   try {
 
     return res.status(200).json({
-      summary
+      summary,
+      success: true,
+      message: 'Chat history summarised successfully',
     })
   } catch (error) {
     console.error('Error in summariseChatHistory:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).json({
+      success: false,
+      message: 'Internal Server Error'
+    });
   }
 }
 

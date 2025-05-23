@@ -1,0 +1,20 @@
+[
+    {
+        "pinCode": "560022",
+        "populationDensity": 16000,
+        "medianHouseholdIncome": 800000,
+        "purchasingPower": 0.8
+    },
+    {
+        "pinCode": "560107",
+        "populationDensity": 20000,
+        "medianHouseholdIncome": 900000,
+        "purchasingPower": 0.85
+    },
+    {
+        "pinCode": "560094",
+        "populationDensity": 30000,
+        "medianHouseholdIncome": 10000,
+        "purchasingPower": 0.855
+    }
+]

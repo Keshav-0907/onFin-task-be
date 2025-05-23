@@ -3,8 +3,8 @@ import { servedArea, areaStats, getAllAreas } from '../controllers/areaControlle
 
 const areaRouter = express.Router();
 
-areaRouter.get('/allAreas', getAllAreas);
+areaRouter.get('/allAreas', getAllAreas as any);
 areaRouter.get('/served', servedArea);
-areaRouter.get('/area-stats/:pinCode', areaStats);
+areaRouter.get('/area-stats/:pinCode', areaStats as any);
 
 export default areaRouter;
