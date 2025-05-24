@@ -12,76 +12,77 @@ const openai = new OpenAI({
 });
 
 const aiChat = async (req: Request<{}, {}, AiChatRequest>, res: Response) => {
-  try {
-    const { message, pinCode, chatHistory = [] } = req.body;
+try {
+  const { message, pinCode, chatHistory = [] } = req.body;
 
-    if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
-    }
+  if (!message) {
+    return res.status(400).json({ error: 'Message is required' });
+  }
 
-    const allAreas = AllAreas.map(({ geometry, ...rest }) => rest);
+  const allAreas = AllAreas.map(({ geometry, ...rest }) => rest);
 
-    let systemPrompt = `
+  let systemPrompt = `
 You are an assistant for the Bengaluru Area Dashboard. Your job is to help users understand locality-based insights.
 - Do **not** refer to the information as "data", "structured format", or "JSON".
 - Always speak in a clear, conversational tone.
 - When describing locations, **use locality names** (like Koramangala, Whitefield), not pin codes unless the user explicitly asks for a pin code.
 - Your responses should be insightful, context-aware, and tailored to Bengaluru's localities.
 - Keep the space and character limits in mind, ensuring responses are concise yet informative.
+If the pincode is avialble, its for the acitve aea/locality, consider it when asked. 
 `;
 
-    let contextMessage = '';
-    if (pinCode) {
-      const areaStats = Stats.find(area => Number(area.pinCode) === Number(pinCode));
-      if (!areaStats) {
-        return res.status(400).json({ error: 'Invalid Pin Code' });
-      }
-
-      contextMessage = `Area Stats for Pin Code ${pinCode}:\n${JSON.stringify(areaStats)}\n\nOther Area Details:\n${JSON.stringify(allAreas)}`;
-    } else {
-      contextMessage = `Complete Area Details:\n${JSON.stringify(allAreas)}`;
+  let contextMessage = '';
+  if (pinCode) {
+    const areaStats = Stats.find(area => Number(area.pinCode) === Number(pinCode));
+    if (!areaStats) {
+      return res.status(400).json({ error: 'Invalid Pin Code' });
     }
 
-    // response stream strts here
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    contextMessage = `Area Stats for Pin Code ${pinCode}:\n${JSON.stringify(areaStats)}\n\nOther Area Details:\n${JSON.stringify(allAreas)}`;
+  } else {
+    contextMessage = `Complete Area Details:\n${JSON.stringify(allAreas)}`;
+  }
 
-    const openaiMessages = [
-      { role: 'system' as const, content: systemPrompt },
-      { role: 'user' as const, content: contextMessage },
-      ...chatHistory.map((chat) => ({
-        role: chat.writer === 'user' ? ('user' as const) : ('assistant' as const),
-        content: chat.message,
-      })),
-      { role: 'user' as const, content: message },
-    ];
+  // response stream strts here
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const openaiMessages = [
+    { role: 'system' as const, content: systemPrompt },
+    { role: 'user' as const, content: contextMessage },
+    ...chatHistory.map((chat) => ({
+      role: chat.writer === 'user' ? ('user' as const) : ('assistant' as const),
+      content: chat.message,
+    })),
+    { role: 'user' as const, content: message },
+  ];
 
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
-      stream: true,
-      messages: openaiMessages,
-      max_tokens: 500,
-    });
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4',
+    stream: true,
+    messages: openaiMessages,
+    max_tokens: 500,
+  });
 
-    for await (const chunk of completion) {
-      const content = chunk.choices?.[0]?.delta?.content;
-      if (content) {
-        res.write(`data: ${content}\n\n`);
-      }
-    }
-
-    res.end();
-  } catch (error) {
-    console.error('Error in aiChat:', error);
-    try {
-      res.write(`data: [ERROR]\n\n`);
-      res.end();
-    } catch {
-      res.status(500).json({ error: 'Internal Server Error' });
+  for await (const chunk of completion) {
+    const content = chunk.choices?.[0]?.delta?.content;
+    if (content) {
+      res.write(`data: ${content}\n\n`);
     }
   }
+
+  res.end();
+} catch (error) {
+  console.error('Error in aiChat:', error);
+  try {
+    res.write(`data: [ERROR]\n\n`);
+    res.end();
+  } catch {
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+}
 };
 
 const summariseChatHistory = async (req: Request<SummariseChatHistoryRequest>, res: Response<SummariseChatHistoryResponse>) => {
