@@ -22,8 +22,12 @@ const aiChat = async (req: Request<{}, {}, AiChatRequest>, res: Response) => {
     const allAreas = AllAreas.map(({ geometry, ...rest }) => rest);
 
     let systemPrompt = `
-You are a helpful assistant for the Bengaluru Area Dashboard. Answer questions using only the supplied data.
-Avoid mentioning "JSON", "data source", or "structured format". Just respond conversationally based on the data.
+You are an assistant for the Bengaluru Area Dashboard. Your job is to help users understand locality-based insights.
+- Do **not** refer to the information as "data", "structured format", or "JSON".
+- Always speak in a clear, conversational tone.
+- When describing locations, **use locality names** (like Koramangala, Whitefield), not pin codes unless the user explicitly asks for a pin code.
+- Your responses should be insightful, context-aware, and tailored to Bengaluru's localities.
+- Keep the space and character limits in mind, ensuring responses are concise yet informative.
 `;
 
     let contextMessage = '';
@@ -109,7 +113,7 @@ const summariseChatHistory = async (req: Request<SummariseChatHistoryRequest>, r
 
   const summary = completion.choices[0].message.content;
 
-  if(!summary) {
+  if (!summary) {
     return res.status(500).json({
       success: false,
       message: 'Failed to generate summary'
