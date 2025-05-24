@@ -19,12 +19,15 @@ const app = express();
 app.use(express.json());
 
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: [
+    'http://localhost:3000',
+    'https://on-fin-task-fe.vercel.app'
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 }));
 
-app.get('/', limiter, (req, res) => {
+app.get('/', (req, res) => {
   res.json({
     message: 'Welcome to the API'
   });
