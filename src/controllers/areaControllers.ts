@@ -311,7 +311,10 @@ const getRentPrice = async (req, res) => {
         const properties = response?.data?.result;
 
         if (!properties || properties.length === 0) {
-            return res.status(404).json({ message: "No properties found for the given area" });
+            return res.status(404).json({ 
+                success: false,
+                message: "No properties found for the given area"
+             });
         }
 
         const flatRents = properties.map(p => p.flatRent || 0);
