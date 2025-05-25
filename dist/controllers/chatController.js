@@ -43,34 +43,58 @@ const aiChat = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, e_1, _b, _c;
     var _d, _e, _f;
     try {
-        const { message, pinCode, chatHistory = [] } = req.body;
+        const { message, pinCode, chatHistory = [], summary } = req.body;
         if (!message) {
             return res.status(400).json({ error: 'Message is required' });
         }
+        // Remove geometry field
         const allAreas = areas_json_1.default.map((_a) => {
             var { geometry } = _a, rest = __rest(_a, ["geometry"]);
             return rest;
         });
-        let systemPrompt = `
+        const systemPrompt = `
 You are an assistant for the Bengaluru Area Dashboard. Your job is to help users understand locality-based insights.
 - Do **not** refer to the information as "data", "structured format", or "JSON".
 - Always speak in a clear, conversational tone.
 - When describing locations, **use locality names** (like Koramangala, Whitefield), not pin codes unless the user explicitly asks for a pin code.
 - Your responses should be insightful, context-aware, and tailored to Bengaluru's localities.
 - Keep the space and character limits in mind, ensuring responses are concise yet informative.
+If the pincode is available, it's for the active area/locality, consider it when asked. 
 `;
+        // Normalize area names
+        const normalizedAreas = allAreas.map((area) => (Object.assign(Object.assign({}, area), { nameLower: area.name.toLowerCase() })));
+        const statsByPin = Object.fromEntries(stats_json_1.default.map((stat) => [stat.pinCode, stat]));
+        // Extract all @locality/metric patterns
+        const mentionPattern = /@([\w\s]+)\/([\w]+)/g;
+        const matches = [...message.matchAll(mentionPattern)];
+        let enrichedMentions = '';
+        for (const [, rawLocality, metric] of matches) {
+            const locality = rawLocality.trim();
+            const area = normalizedAreas.find((a) => a.nameLower === locality.toLowerCase());
+            if (!area) {
+                enrichedMentions += `Could not find data for ${locality}\n`;
+                continue;
+            }
+            const stat = statsByPin[area.pinCode];
+            if (!stat || !(metric in stat)) {
+                enrichedMentions += `No metric "${metric}" found for ${locality}\n`;
+                continue;
+            }
+            const value = stat[metric];
+            enrichedMentions += `Metric for ${locality} - ${metric}: ${typeof value === 'object' ? JSON.stringify(value) : value}\n`;
+        }
         let contextMessage = '';
         if (pinCode) {
-            const areaStats = stats_json_1.default.find(area => Number(area.pinCode) === Number(pinCode));
+            const areaStats = stats_json_1.default.find((area) => Number(area.pinCode) === Number(pinCode));
             if (!areaStats) {
                 return res.status(400).json({ error: 'Invalid Pin Code' });
             }
-            contextMessage = `Area Stats for Pin Code ${pinCode}:\n${JSON.stringify(areaStats)}\n\nOther Area Details:\n${JSON.stringify(allAreas)}`;
+            contextMessage = `Area Stats for Pin Code ${pinCode}:\n${JSON.stringify(areaStats)}\n\nOther Area Details:\n${JSON.stringify(allAreas)}\n\n${enrichedMentions}`;
         }
         else {
-            contextMessage = `Complete Area Details:\n${JSON.stringify(allAreas)}`;
+            contextMessage = `Complete Area Details:\n${JSON.stringify(allAreas)}\n\n${enrichedMentions}`;
         }
-        // response stream strts here
+        // SSE Headers
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
@@ -81,8 +105,10 @@ You are an assistant for the Bengaluru Area Dashboard. Your job is to help users
                 role: chat.writer === 'user' ? 'user' : 'assistant',
                 content: chat.message,
             })),
+            { role: 'system', content: summary ? summary : 'You are an AI assistant that provides insights based on user queries about Bengaluru localities.' },
             { role: 'user', content: message },
         ];
+        console.log('OpenAI Messages:', openaiMessages);
         const completion = yield openai.chat.completions.create({
             model: 'gpt-4',
             stream: true,
@@ -111,13 +137,11 @@ You are an assistant for the Bengaluru Area Dashboard. Your job is to help users
     }
     catch (error) {
         console.error('Error in aiChat:', error);
-        try {
-            res.write(`data: [ERROR]\n\n`);
-            res.end();
+        if (!res.headersSent) {
+            res.setHeader('Content-Type', 'text/event-stream');
         }
-        catch (_h) {
-            res.status(500).json({ error: 'Internal Server Error' });
-        }
+        res.write(`data: [ERROR: Something went wrong processing your request. Please try again.]\n\n`);
+        res.end();
     }
 });
 exports.aiChat = aiChat;
@@ -130,7 +154,9 @@ const summariseChatHistory = (req, res) => __awaiter(void 0, void 0, void 0, fun
         });
     }
     const systemPrompt = `
-  Summarise the following chat history within 30 words. Provide a concise summary of the conversation, highlighting key points and any important information.`;
+Summarize the following chat history in under 30 words. 
+Focus strictly on factual information, key metrics, and user intent. 
+Exclude conversational fillers, suggestions, or rhetorical questions.`;
     const messages = [
         { role: 'system', content: systemPrompt },
         ...chatHistory.map((chat) => ({

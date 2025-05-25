@@ -130,6 +130,7 @@ export interface AiChatRequest {
     message: string;
     writer: string;
   }[];
+  summary?: string;
 }
 
 export interface AiChatResponse extends BaseResponse {

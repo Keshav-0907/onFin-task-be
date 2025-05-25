@@ -16,5 +16,29 @@
         "populationDensity": 30000,
         "medianHouseholdIncome": 10000,
         "purchasingPower": 0.855
+    },
+    {
+        "pinCode": "560048",
+        "populationDensity": 30000,
+        "medianHouseholdIncome": 10000,
+        "purchasingPower": 0.855
+    },
+    {
+        "pinCode": "560066",
+        "populationDensity": 30000,
+        "medianHouseholdIncome": 10000,
+        "purchasingPower": 0.855
+    },
+    {
+        "pinCode": "560102",
+        "populationDensity": 30000,
+        "medianHouseholdIncome": 10000,
+        "purchasingPower": 0.855
+    },
+    {
+        "pinCode": "560076",
+        "populationDensity": 30000,
+        "medianHouseholdIncome": 10000,
+        "purchasingPower": 0.855
     }
 ]
