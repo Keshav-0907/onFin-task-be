@@ -337,7 +337,10 @@ const getRentPrice = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         const [response] = yield Promise.all([fetchProperties]);
         const properties = (_b = response === null || response === void 0 ? void 0 : response.data) === null || _b === void 0 ? void 0 : _b.result;
         if (!properties || properties.length === 0) {
-            return res.status(404).json({ message: "No properties found for the given area" });
+            return res.status(404).json({
+                success: false,
+                message: "No properties found for the given area"
+            });
         }
         const flatRents = properties.map(p => p.flatRent || 0);
         // Categorize rent values

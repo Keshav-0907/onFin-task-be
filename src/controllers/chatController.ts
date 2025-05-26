@@ -23,17 +23,19 @@ const aiChat = async (req: Request<{}, {}, AiChatRequest>, res: Response) => {
     // Remove geometry field
     const allAreas = AllAreas.map(({ geometry, ...rest }) => rest);
 
-    const systemPrompt = `
-You are an assistant for the Bengaluru Area Dashboard. Your job is to help users understand locality-based insights.
-- Do **not** refer to the information as "data", "structured format", or "JSON".
-- Always speak in a clear, conversational tone.
-- When describing locations, **use locality names** (like Koramangala, Whitefield), not pin codes unless the user explicitly asks for a pin code.
-- Your responses should be insightful, context-aware, and tailored to Bengaluru's localities.
-- Keep the space and character limits in mind, ensuring responses are concise yet informative.
-If the pincode is available, it's for the active area/locality, consider it when asked. 
-`;
+const systemPrompt = `
+You are a smart and conversational assistant for the Bengaluru Area Dashboard. Your role is to help users understand and explore locality-specific insights in Bengaluru.
 
-    // Normalize area names
+Guidelines:
+- Always communicate in a clear, friendly, and human tone.
+- Use the **locality name** (e.g., Koramangala, Whitefield) when referring to areas — never use pin codes unless the user explicitly asks for them.
+- Only refer to localities that exist in the provided dataset.
+- If a locality is not found, respond with: "Could not find data for [locality name]."
+- Avoid technical terms such as "data", "JSON", or "structured format".
+- Tailor responses to be insightful, context-aware, and relevant to the locality in question.
+- Keep answers concise, informative, and suitable for quick reading.
+- If a pin code is provided, treat it as referring to the active locality — use it to fetch or reference the relevant locality insights.
+`;
     const normalizedAreas = allAreas.map((area) => ({
       ...area,
       nameLower: area.name.toLowerCase(),
@@ -130,9 +132,12 @@ const summariseChatHistory = async (req: Request<SummariseChatHistoryRequest>, r
   }
 
   const systemPrompt = `
-Summarize the following chat history in under 30 words. 
-Focus strictly on factual information, key metrics, and user intent. 
-Exclude conversational fillers, suggestions, or rhetorical questions.`;
+Summarize the following chat history 
+Focus strictly on factual information about banglore, key metrics, and user intent. 
+Exclude conversational fillers, suggestions, or rhetorical questions.
+Do not include any personal opinions or subjective interpretations.
+Do not mention the word "summary" in your response.
+`;
 
   const messages = [
     { role: 'system', content: systemPrompt },
@@ -143,7 +148,7 @@ Exclude conversational fillers, suggestions, or rhetorical questions.`;
   ];
 
   const completion = await openai.chat.completions.create({
-    model: 'gpt-4',
+    model: 'gpt-3.5-turbo',
     messages,
     max_tokens: 1000,
   })
