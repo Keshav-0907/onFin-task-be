@@ -195,8 +195,7 @@ const getSalaries = async (req, res) => {
                 });
 
                 return roles;
-            } catch (err) {
-                console.warn(`Skipping ${companyName}: ${err.message}`);
+            } catch {
                 return [];
             }
         });

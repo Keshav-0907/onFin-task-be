@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -36,6 +69,8 @@ const stats_json_1 = __importDefault(require("../data/stats.json"));
 const openai_1 = __importDefault(require("openai"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const lockedArea_json_1 = __importDefault(require("../data/lockedArea.json"));
+const axios_1 = __importDefault(require("axios"));
+const cheerio = __importStar(require("cheerio"));
 dotenv_1.default.config();
 const openai = new openai_1.default({
     apiKey: process.env.OPENAI_API_KEY,
@@ -64,7 +99,94 @@ const aiChat = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         const mentionPattern = /@([\w\s]+)\/([\w]+)/g;
         const matches = [...message.matchAll(mentionPattern)];
         let enrichedMentions = '';
-        for (const [, rawLocality, metric] of matches) {
+        for (const match of matches) {
+            const [, rawLocality, metric] = match;
+            if (metric === 'AverageSalaries') {
+                console.log(`Fetching salaries for ${rawLocality}...`);
+                const query = `top+companies+in+${rawLocality}+Bangalore`;
+                try {
+                    const googleApiRes = yield axios_1.default.get(`https://maps.googleapis.com/maps/api/place/textsearch/json?query=${query}&key=${process.env.GOOGLE_API_KEY}`);
+                    if (googleApiRes.data.status !== "OK") {
+                        enrichedMentions += `❌ Could not fetch companies for ${rawLocality} (Google API error)\n`;
+                        continue;
+                    }
+                    const companyNames = googleApiRes.data.results.map(result => result.name.split(" ").join("-").toLowerCase());
+                    const fetchSalaries = companyNames.map((companySlug) => __awaiter(void 0, void 0, void 0, function* () {
+                        const url = `https://www.ambitionbox.com/salaries/${companySlug}-salaries/bengaluru-location`;
+                        try {
+                            const response = yield axios_1.default.get(url, {
+                                headers: {
+                                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                                    "Accept-Language": "en-US,en;q=0.9",
+                                },
+                            });
+                            const $ = cheerio.load(response.data);
+                            const salaries = [];
+                            $("tr.jobProfiles-table__row").each((_, el) => {
+                                const salaryText = $(el).find(".salary-range").text().replace(/\s+/g, " ").trim();
+                                const match = salaryText.match(/₹([\d.]+)\s*L\/yr\s*-\s*₹([\d.]+)\s*L\/yr/);
+                                if (match) {
+                                    const min = parseFloat(match[1]) * 100000;
+                                    const max = parseFloat(match[2]) * 100000;
+                                    const avg = Math.round((min + max) / 2);
+                                    salaries.push(avg);
+                                }
+                            });
+                            return salaries;
+                        }
+                        catch (err) {
+                            console.warn(`⚠️ Skipping ${companySlug}: ${err.message}`);
+                            return [];
+                        }
+                    }));
+                    const allSalariesArrays = yield Promise.all(fetchSalaries);
+                    const allSalaries = allSalariesArrays.flat();
+                    console.log(`Found ${allSalaries.length} salary entries for ${rawLocality}`);
+                    if (allSalaries.length === 0) {
+                        enrichedMentions += `❌ No salary data found for companies in ${rawLocality}\n`;
+                        console.log(`No salary data found for companies in ${rawLocality}`);
+                    }
+                    else {
+                        const avgSalary = Math.round(allSalaries.reduce((a, b) => a + b, 0) / allSalaries.length);
+                        console.log(`Average salary for ${rawLocality} is ₹${avgSalary.toLocaleString()}`);
+                        enrichedMentions += `💼 Average salary for ${rawLocality} is ₹${avgSalary.toLocaleString()} / year\n`;
+                    }
+                }
+                catch (error) {
+                    console.error(`Error during salary fetch for ${rawLocality}:`, error.message);
+                    console.log(`❌ Failed to fetch salary info for ${rawLocality}`);
+                    enrichedMentions += `❌ Failed to fetch salary info for ${rawLocality}\n`;
+                }
+                continue;
+            }
+            if (metric === 'AverageRentPrice') {
+                const fetchProperties = yield axios_1.default.post("https://swrapi.sowerent.com/api/v1/website/property/listings", {
+                    pageSize: 100,
+                    pageNo: 1,
+                    locations: [rawLocality],
+                    preferredTenants: "",
+                    budgetFrom: 0,
+                    budgetTo: 1000000,
+                    carpetAreaFrom: null,
+                    carpetAreaTo: null,
+                    tags: "",
+                    furnished: "",
+                    managedBy: "",
+                    availability: null,
+                    sortBy: "",
+                });
+                const properties = fetchProperties.data.result;
+                if (!properties || properties.length === 0) {
+                    console.log(`No rent prices found for ${rawLocality}`);
+                    enrichedMentions += `No rent prices found for ${rawLocality}\n`;
+                    continue;
+                }
+                const totalRent = properties.reduce((sum, property) => {
+                    return sum + (property.flatRent || 0);
+                }, 0);
+                const averageRent = totalRent / properties.length;
+                enrichedMentions += `Average rent for ${rawLocality} is ₹${averageRent.toFixed(2)}\n`;
+            }
             const area = findArea(rawLocality.trim());
             if (!area) {
                 enrichedMentions += `Could not find data for ${rawLocality}\n`;
@@ -137,6 +259,9 @@ You are “Bengaluru Insights”, the friendly yet data-savvy assistant for the 
 4. Use \\n for new lines to improve readability, especially in bulleted lists and comparisons.
 5. If a locality is not served, provide socioeconomic insights (population density, income, purchasing power) to inform business decisions.
 6. Keep responses concise, while still being informative.
+7. If average **salary** or **rent price** is provided via enriched data, mention it clearly — e.g., “Considering the average salary in Whitefield...”
+8. If salary or rent was **asked but not available**, explicitly state that the data could not be fetched for that locality. Avoid guessing.
+
 
 📋  Conversational rules
 • Use the locality’s proper name (Koramangala, Whitefield); only mention pin codes if the user asks.  
@@ -202,6 +327,10 @@ Example:
             finally { if (e_1) throw e_1.error; }
         }
         res.end();
+        // return res.status(200).json({
+        //   success: true,
+        //   message: 'Chat processed successfully',
+        // })
     }
     catch (error) {
         console.error('Error in aiChat:', error);

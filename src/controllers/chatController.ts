@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 import { AiChatRequest, SummariseChatHistoryRequest, SummariseChatHistoryResponse } from '../types';
 import { ChatCompletionMessageParam } from 'openai/resources/chat';
 import LockedAreas from '../data/lockedArea.json';
+import axios from 'axios';
+import * as cheerio from "cheerio";
 
 dotenv.config();
 
@@ -30,7 +32,7 @@ const aiChat = async (req: Request<{}, {}, AiChatRequest>, res: Response) => {
       LockedAreas.map((stat: any) => [stat.pinCode, stat])
     );
 
-    const getStatsForArea = (area: typeof allAreas[0]) =>     
+    const getStatsForArea = (area: typeof allAreas[0]) =>
       area.isServed ? servedAreaStats[area.pinCode] : lockedAreaStats[area.pinCode];
 
     const findArea = (name: string) =>
@@ -45,14 +47,126 @@ const aiChat = async (req: Request<{}, {}, AiChatRequest>, res: Response) => {
     const matches = [...message.matchAll(mentionPattern)];
 
     let enrichedMentions = '';
-    for (const [, rawLocality, metric] of matches) {
+    for (const match of matches) {
+      const [, rawLocality, metric] = match;
+
+      if (metric === 'AverageSalaries') {
+        console.log(`Fetching salaries for ${rawLocality}...`);
+        const query = `top+companies+in+${rawLocality}+Bangalore`;
+
+        try {
+          const googleApiRes = await axios.get(
+            `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${query}&key=${process.env.GOOGLE_API_KEY}`
+          );
+
+          if (googleApiRes.data.status !== "OK") {
+            enrichedMentions += `❌ Could not fetch companies for ${rawLocality} (Google API error)\n`;
+            continue;
+          }
+
+          const companyNames = googleApiRes.data.results.map(result =>
+            result.name.split(" ").join("-").toLowerCase()
+          );
+
+          const fetchSalaries = companyNames.map(async companySlug => {
+            const url = `https://www.ambitionbox.com/salaries/${companySlug}-salaries/bengaluru-location`;
+
+            try {
+              const response = await axios.get(url, {
+                headers: {
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                  "Accept-Language": "en-US,en;q=0.9",
+                },
+              });
+
+              const $ = cheerio.load(response.data);
+              const salaries: number[] = [];
+
+              $("tr.jobProfiles-table__row").each((_, el) => {
+                const salaryText = $(el).find(".salary-range").text().replace(/\s+/g, " ").trim();
+                const match = salaryText.match(/₹([\d.]+)\s*L\/yr\s*-\s*₹([\d.]+)\s*L\/yr/);
+
+                if (match) {
+                  const min = parseFloat(match[1]) * 100000;
+                  const max = parseFloat(match[2]) * 100000;
+                  const avg = Math.round((min + max) / 2);
+                  salaries.push(avg);
+                }
+              });
+
+              return salaries;
+            } catch (err) {
+              console.warn(`⚠️ Skipping ${companySlug}: ${err.message}`);
+              return [];
+            }
+          });
+
+          const allSalariesArrays = await Promise.all(fetchSalaries);
+          const allSalaries = allSalariesArrays.flat();
+          console.log(`Found ${allSalaries.length} salary entries for ${rawLocality}`);
+
+          if (allSalaries.length === 0) {
+            enrichedMentions += `❌ No salary data found for companies in ${rawLocality}\n`;
+            console.log(`No salary data found for companies in ${rawLocality}`);
+          } else {
+            const avgSalary = Math.round(allSalaries.reduce((a, b) => a + b, 0) / allSalaries.length);
+            console.log(`Average salary for ${rawLocality} is ₹${avgSalary.toLocaleString()}`);
+            enrichedMentions += `💼 Average salary for ${rawLocality} is ₹${avgSalary.toLocaleString()} / year\n`;
+          }
+        } catch (error) {
+          console.error(`Error during salary fetch for ${rawLocality}:`, error.message);
+          console.log(`❌ Failed to fetch salary info for ${rawLocality}`);
+          enrichedMentions += `❌ Failed to fetch salary info for ${rawLocality}\n`;
+        }
+
+        continue;
+      }
+
+
+      if (metric === 'AverageRentPrice') {
+        const fetchProperties = await axios.post(
+          "https://swrapi.sowerent.com/api/v1/website/property/listings",
+          {
+            pageSize: 100,
+            pageNo: 1,
+            locations: [rawLocality],
+            preferredTenants: "",
+            budgetFrom: 0,
+            budgetTo: 1000000,
+            carpetAreaFrom: null,
+            carpetAreaTo: null,
+            tags: "",
+            furnished: "",
+            managedBy: "",
+            availability: null,
+            sortBy: "",
+          }
+        );
+
+        const properties = fetchProperties.data.result;
+
+        if (!properties || properties.length === 0) {
+          console.log(`No rent prices found for ${rawLocality}`);
+          enrichedMentions += `No rent prices found for ${rawLocality}\n`;
+          continue;
+        }
+
+        const totalRent = properties.reduce((sum: number, property: any) => {
+          return sum + (property.flatRent || 0);
+        }, 0);
+
+        const averageRent = totalRent / properties.length;
+
+        enrichedMentions += `Average rent for ${rawLocality} is ₹${averageRent.toFixed(2)}\n`;
+      }
+
       const area = findArea(rawLocality.trim());
       if (!area) {
         enrichedMentions += `Could not find data for ${rawLocality}\n`;
         continue;
       }
 
-      const stat = getStatsForArea(area);           
+      const stat = getStatsForArea(area);
       if (!stat || !(metric in stat)) {
         enrichedMentions += `No metric "${metric}" found for ${area.name}\n`;
         continue;
@@ -63,12 +177,13 @@ const aiChat = async (req: Request<{}, {}, AiChatRequest>, res: Response) => {
         }\n`;
     }
 
+
     const inferredLocalities = extractLocalities(message);
     const relevantStats = inferredLocalities
       .map(findArea)
       .filter(Boolean)
       .map((area) => {
-        const stat = getStatsForArea(area!);           
+        const stat = getStatsForArea(area!);
 
         if (area!.isServed && stat) {
           const utilisation =
@@ -76,7 +191,7 @@ const aiChat = async (req: Request<{}, {}, AiChatRequest>, res: Response) => {
               0) /
             (stat.dailyCapacity || 1);
 
-            const totalOrders = stat.dailyOrders?.reduce((acc: number, d: any) => acc + d.orders, 0) ?? 0;
+          const totalOrders = stat.dailyOrders?.reduce((acc: number, d: any) => acc + d.orders, 0) ?? 0;
 
           return {
             name: area!.name,
@@ -118,7 +233,7 @@ const aiChat = async (req: Request<{}, {}, AiChatRequest>, res: Response) => {
       `Relevant Stats:\n${JSON.stringify(relevantStats, null, 2)}\n\n` +
       `Additional Metrics:\n${enrichedMentions}`;
 
-const systemPrompt = `
+    const systemPrompt = `
 You are “Bengaluru Insights”, the friendly yet data-savvy assistant for the Bengaluru Area Dashboard. Your job is to turn locality metrics into clear, actionable advice on operations, logistics, and business expansion in Bengaluru.
 
 ⭐  Core duties
@@ -130,6 +245,9 @@ You are “Bengaluru Insights”, the friendly yet data-savvy assistant for the 
 4. Use \\n for new lines to improve readability, especially in bulleted lists and comparisons.
 5. If a locality is not served, provide socioeconomic insights (population density, income, purchasing power) to inform business decisions.
 6. Keep responses concise, while still being informative.
+7. If average **salary** or **rent price** is provided via enriched data, mention it clearly — e.g., “Considering the average salary in Whitefield...”
+8. If salary or rent was **asked but not available**, explicitly state that the data could not be fetched for that locality. Avoid guessing.
+
 
 📋  Conversational rules
 • Use the locality’s proper name (Koramangala, Whitefield); only mention pin codes if the user asks.  
@@ -191,6 +309,12 @@ Example:
     }
 
     res.end();
+
+    // return res.status(200).json({
+    //   success: true,
+    //   message: 'Chat processed successfully',
+
+    // })
   } catch (error) {
     console.error('Error in aiChat:', error);
     if (!res.headersSent) {

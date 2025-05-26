@@ -222,8 +222,7 @@ const getSalaries = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 });
                 return roles;
             }
-            catch (err) {
-                console.warn(`Skipping ${companyName}: ${err.message}`);
+            catch (_a) {
                 return [];
             }
         }));
