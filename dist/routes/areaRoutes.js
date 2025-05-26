@@ -9,7 +9,7 @@ const areaRouter = express_1.default.Router();
 areaRouter.get('/allAreas', areaControllers_1.getAllAreas);
 areaRouter.get('/served', areaControllers_1.servedArea);
 areaRouter.get('/area-stats/:pinCode', areaControllers_1.areaStats);
-areaRouter.get('/servedArea-with-data', areaControllers_1.servedAreaWithData);
+areaRouter.get('/all-data-combined', areaControllers_1.allDataCombined);
 areaRouter.post('/getSalary', areaControllers_1.getSalaries);
 areaRouter.post('/getRentPrice', areaControllers_1.getRentPrice);
 exports.default = areaRouter;

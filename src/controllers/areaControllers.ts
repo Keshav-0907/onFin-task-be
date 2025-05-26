@@ -14,13 +14,22 @@ const getAllAreas = (req: Request, res: Response<GetAllAreasResponse>) => {
     });
 };
 
-const servedArea = (req: Request, res: Response<ServedAreaResponse>) => {
+const servedArea = (req: Request, res) => {
     try {
-        const served = AllAreas.filter(area => area.isServed === true)
+        const allServedAreas = AllAreas
+            .filter(area => area.isServed === true)
+            .map(({ geometry, ...rest }) => {
+                const stats = StatsData.find(stat => Number(stat.pinCode) == rest.pinCode);
+                return {
+                    ...rest,
+                    stats: stats || null
+                };
+            });
+
         res.status(200).json({
             success: true,
             message: "Served areas fetched successfully",
-            data: served
+            data: allServedAreas
         })
     } catch (error) {
         res.status(500).json({
@@ -28,128 +37,101 @@ const servedArea = (req: Request, res: Response<ServedAreaResponse>) => {
             message: "Internal server error",
         })
     }
-
 }
 
-const areaStats = async (req: Request<AreaStatsRequest>, res: Response<AreaStatsResponse>) => {
+const areaStats = async (req: Request<{ pinCode: number }>, res: Response) => {
     try {
         const { pinCode } = req.params;
-        const areaData = AllAreas.find(area => area.pinCode == Number(pinCode))
+        const areaData = AllAreas.find(area => area.pinCode == pinCode);
+
         if (!areaData) {
             return res.status(404).json({
                 success: false,
-                message: 'Area not found'
-            })
+                message: 'Area not found for the given pin code',
+            });
         }
-        const isLocked = !areaData.isServed;
 
-        if (isLocked) {
+        console.log("Area data:", areaData);
+
+        if (areaData.isServed) {
+            const areaStats = StatsData.find(stat => stat.pinCode == pinCode);
+            return res.status(200).json({
+                success: true,
+                message: 'Area stats found',
+                data: areaStats || {},
+            });
+        }
+
+        const lockedData = LockedAreas.find(area => area.pinCode == pinCode);
+
+        console.log("Locked data:", lockedData);
+        let wikiData = null;
+
+        if (areaData.wiki_name) {
             try {
-                const response = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(areaData.wiki_name)}`);
+                const wikiResponse = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(areaData.wiki_name)}`);
 
-                if (response.ok) {
-                    const wikiData = await response.json();
-                    return res.status(200).json({
-                        data: {
-                            isLocked: true,
-                            pinCode,
-                            areaName: areaData.name,
-                            area_name: areaData.name,
-                            wikiData,
-                        },
-                        message: "Area stats found",
-                        success: true,
-                    });
+                if (wikiResponse.ok) {
+                    wikiData = await wikiResponse.json();
                 } else {
-                    const fallBackData = LockedAreas.find(area => area.pinCode == pinCode)
-                    if (fallBackData) {
-                        return res.status(200).json({
-                            data: {
-                                isFallback: true,
-                                pinCode,
-                                areaName: areaData.name,
-                                populationDensity: fallBackData.populationDensity,
-                                medianHouseholdIncome: fallBackData.medianHouseholdIncome,
-                                purchasingPower: fallBackData.purchasingPower,
-                            },
-                            message: "Area stats found",
-                            success: true,
-                        })
-                    }
+                    console.warn(`Wikipedia page not found for ${areaData.wiki_name}`);
                 }
-            } catch (error) {
-                return res.status(404).json({
-                    message: 'Something went wrong',
-                    success: false,
-                })
-
-            }
+            } catch (wikiError) {
+                console.error("Error fetching wiki summary:", wikiError);
+            } pinCode
         }
 
-        if (!areaData) {
-            return res.status(404).json({
-                message: 'Area not found',
-                success: false,
-            })
-        }
-        const areaStats = StatsData.find(area => area.pinCode == pinCode)
-
-        if (!areaStats) {
-            return res.status(404).json({
-                message: 'Area stats not found',
-                success: false,
-            })
-        }
         return res.status(200).json({
-            message: "Area stats found",
-            data: {
-                totalOrders: areaStats.totalOrders,
-                avgOrderValue: areaStats.avgOrderValue,
-                avgDeliveryTime: areaStats.avgDeliveryTime,
-                deliveryDelay: areaStats.deliveryDelay,
-                dailyOrders: areaStats.dailyOrders,
-                appOpensHistory: areaStats.appOpensHistory,
-                areaName: areaData.name,
-            },
             success: true,
-        })
-
-
+            message: wikiData ? 'Locked area stats and wiki summary found' : 'Locked area stats found (wiki data unavailable)',
+            data: {
+                isLocked: true,
+                pinCode,
+                areaName: areaData.name,
+                lockedData: lockedData || {},
+                wikiData: wikiData || null,
+            },
+        });
 
     } catch (error) {
-        console.error("Error fetching wiki summary:", error);
+        console.error("Internal server error:", error);
         return res.status(500).json({
-            message: 'Internal server error',
             success: false,
+            message: 'Internal server error',
         });
     }
-}
+};
 
-const servedAreaWithData = (req, res) => {
+// for getting served and locked areas with their stats -> chat @ functionality
+const allDataCombined = (req, res) => {
     const allServedAreas = AllAreas
         .filter(area => area.isServed === true)
         .map(({ geometry, ...rest }) => {
-            const stats = StatsData.find(stat => Number(stat.pinCode) == rest.pinCode);
+            const stats = StatsData.find(stat => Number(stat.pinCode) === Number(rest.pinCode));
             return {
                 ...rest,
-                stats: stats || null  // attach stats or null if not found
+                stats: stats || null
             };
         });
 
-    if (!allServedAreas || allServedAreas.length === 0) {
-        return res.status(404).json({
-            success: false,
-            message: "No served areas found",
-            allServedAreas: []
+    const allLockedAreas = AllAreas
+        .filter(area => area.isServed === false)
+        .map(({ geometry, ...rest }) => {
+            const lockedData = LockedAreas.find(lock => Number(lock.pinCode) === Number(rest.pinCode));
+            return {
+                ...rest,
+                lockedData: lockedData || null
+            };
         });
-    }
 
     return res.status(200).json({
         success: true,
-        message: "Served areas fetched successfully",
-        allServedAreas
+        message: "Served and locked areas fetched successfully",
+        servedAreas: allServedAreas,
+        lockedAreas: allLockedAreas,
     });
 };
+
 
 const getSalaries = async (req, res) => {
     const { pinCode } = req.body;
@@ -168,10 +150,9 @@ const getSalaries = async (req, res) => {
             });
         }
 
-        // Top 5 companies with logos
         const topCompanies = googleApiRes.data.results.slice(0, 5).map(company => ({
             name: company.name,
-            logo: company.icon, // Or use company.photos[0].photo_reference for a higher quality image
+            logo: company.icon, 
             address: company.formatted_address || "",
         }));
 
@@ -279,7 +260,7 @@ const getRentPrice = async (req, res) => {
         "10to20k": 0,
         "20to30k": 0,
         "30to40k": 0,
-        above40k: 0
+        above40k: 0,
     };
 
     try {
@@ -289,12 +270,13 @@ const getRentPrice = async (req, res) => {
             return res.status(400).json({ message: "Pin code is required" });
         }
 
-        const areaName = AllAreas.find(area => area.pinCode == pinCode)?.name;
+        const areaName = AllAreas.find((area) => area.pinCode == pinCode)?.name;
 
         if (!areaName) {
             return res.status(404).json({
                 message: "Area not found for the given pin code",
-                rentBuckets: defaultRentBuckets
+                rentBuckets: defaultRentBuckets,
+                properties: [],
             });
         }
 
@@ -313,27 +295,31 @@ const getRentPrice = async (req, res) => {
                 furnished: "",
                 managedBy: "",
                 availability: null,
-                sortBy: ""
+                sortBy: "",
             }
         );
 
         const [response] = await Promise.all([fetchProperties]);
-        const properties = response?.data?.result;
+        const rawProperties = response?.data?.result || [];
 
-        if (!properties || properties.length === 0) {
+        if (rawProperties.length === 0) {
             return res.status(200).json({
                 success: true,
                 message: "No properties found for the given area",
                 areaName,
-                rentBuckets: defaultRentBuckets
+                rentBuckets: defaultRentBuckets,
+                properties: [],
             });
         }
 
-        const flatRents = properties.map(p => p.flatRent || 0);
+        const properties = rawProperties.map((p, index) => ({
+            id: index + 1,
+            rent: p.flatRent || 0,
+        }));
 
         const rentBuckets = { ...defaultRentBuckets };
 
-        for (const rent of flatRents) {
+        for (const { rent } of properties) {
             if (rent <= 10000) rentBuckets.upto10k++;
             else if (rent <= 20000) rentBuckets["10to20k"]++;
             else if (rent <= 30000) rentBuckets["20to30k"]++;
@@ -345,7 +331,8 @@ const getRentPrice = async (req, res) => {
             success: true,
             message: "Rent summary fetched successfully",
             areaName,
-            rentBuckets
+            rentBuckets,
+            properties,
         });
     } catch (error) {
         console.error("Error fetching flat rents:", error.message);
@@ -353,10 +340,12 @@ const getRentPrice = async (req, res) => {
             success: false,
             message: "Error occurred while fetching rent data",
             areaName: "Unknown",
-            rentBuckets: defaultRentBuckets
+            rentBuckets: defaultRentBuckets,
+            properties: [],
         });
     }
 };
 
 
-export { servedArea, areaStats, getAllAreas, getSalaries, getRentPrice, servedAreaWithData }
+
+export { servedArea, areaStats, getAllAreas, getSalaries, getRentPrice, allDataCombined }

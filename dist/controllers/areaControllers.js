@@ -56,7 +56,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.servedAreaWithData = exports.getRentPrice = exports.getSalaries = exports.getAllAreas = exports.areaStats = exports.servedArea = void 0;
+exports.allDataCombined = exports.getRentPrice = exports.getSalaries = exports.getAllAreas = exports.areaStats = exports.servedArea = void 0;
 const areas_json_1 = __importDefault(require("../data/areas.json"));
 const stats_json_1 = __importDefault(require("../data/stats.json"));
 const lockedArea_json_1 = __importDefault(require("../data/lockedArea.json"));
@@ -72,11 +72,17 @@ const getAllAreas = (req, res) => {
 exports.getAllAreas = getAllAreas;
 const servedArea = (req, res) => {
     try {
-        const served = areas_json_1.default.filter(area => area.isServed === true);
+        const allServedAreas = areas_json_1.default
+            .filter(area => area.isServed === true)
+            .map((_a) => {
+            var { geometry } = _a, rest = __rest(_a, ["geometry"]);
+            const stats = stats_json_1.default.find(stat => Number(stat.pinCode) == rest.pinCode);
+            return Object.assign(Object.assign({}, rest), { stats: stats || null });
+        });
         res.status(200).json({
             success: true,
             message: "Served areas fetched successfully",
-            data: served
+            data: allServedAreas
         });
     }
     catch (error) {
@@ -90,115 +96,85 @@ exports.servedArea = servedArea;
 const areaStats = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { pinCode } = req.params;
-        const areaData = areas_json_1.default.find(area => area.pinCode == Number(pinCode));
+        const areaData = areas_json_1.default.find(area => area.pinCode == pinCode);
         if (!areaData) {
             return res.status(404).json({
                 success: false,
-                message: 'Area not found'
+                message: 'Area not found for the given pin code',
             });
         }
-        const isLocked = !areaData.isServed;
-        if (isLocked) {
+        console.log("Area data:", areaData);
+        if (areaData.isServed) {
+            const areaStats = stats_json_1.default.find(stat => stat.pinCode == pinCode);
+            return res.status(200).json({
+                success: true,
+                message: 'Area stats found',
+                data: areaStats || {},
+            });
+        }
+        const lockedData = lockedArea_json_1.default.find(area => area.pinCode == pinCode);
+        console.log("Locked data:", lockedData);
+        let wikiData = null;
+        if (areaData.wiki_name) {
             try {
-                const response = yield fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(areaData.wiki_name)}`);
-                if (response.ok) {
-                    const wikiData = yield response.json();
-                    return res.status(200).json({
-                        data: {
-                            isLocked: true,
-                            pinCode,
-                            areaName: areaData.name,
-                            area_name: areaData.name,
-                            wikiData,
-                        },
-                        message: "Area stats found",
-                        success: true,
-                    });
+                const wikiResponse = yield fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(areaData.wiki_name)}`);
+                if (wikiResponse.ok) {
+                    wikiData = yield wikiResponse.json();
                 }
                 else {
-                    const fallBackData = lockedArea_json_1.default.find(area => area.pinCode == pinCode);
-                    if (fallBackData) {
-                        return res.status(200).json({
-                            data: {
-                                isFallback: true,
-                                pinCode,
-                                areaName: areaData.name,
-                                populationDensity: fallBackData.populationDensity,
-                                medianHouseholdIncome: fallBackData.medianHouseholdIncome,
-                                purchasingPower: fallBackData.purchasingPower,
-                            },
-                            message: "Area stats found",
-                            success: true,
-                        });
-                    }
+                    console.warn(`Wikipedia page not found for ${areaData.wiki_name}`);
                 }
             }
-            catch (error) {
-                return res.status(404).json({
-                    message: 'Something went wrong',
-                    success: false,
-                });
+            catch (wikiError) {
+                console.error("Error fetching wiki summary:", wikiError);
             }
-        }
-        if (!areaData) {
-            return res.status(404).json({
-                message: 'Area not found',
-                success: false,
-            });
-        }
-        const areaStats = stats_json_1.default.find(area => area.pinCode == pinCode);
-        if (!areaStats) {
-            return res.status(404).json({
-                message: 'Area stats not found',
-                success: false,
-            });
+            pinCode;
         }
         return res.status(200).json({
-            message: "Area stats found",
-            data: {
-                totalOrders: areaStats.totalOrders,
-                avgOrderValue: areaStats.avgOrderValue,
-                avgDeliveryTime: areaStats.avgDeliveryTime,
-                deliveryDelay: areaStats.deliveryDelay,
-                dailyOrders: areaStats.dailyOrders,
-                appOpensHistory: areaStats.appOpensHistory,
-                areaName: areaData.name,
-            },
             success: true,
+            message: wikiData ? 'Locked area stats and wiki summary found' : 'Locked area stats found (wiki data unavailable)',
+            data: {
+                isLocked: true,
+                pinCode,
+                areaName: areaData.name,
+                lockedData: lockedData || {},
+                wikiData: wikiData || null,
+            },
         });
     }
     catch (error) {
-        console.error("Error fetching wiki summary:", error);
+        console.error("Internal server error:", error);
         return res.status(500).json({
-            message: 'Internal server error',
             success: false,
+            message: 'Internal server error',
         });
     }
 });
 exports.areaStats = areaStats;
-const servedAreaWithData = (req, res) => {
+// for getting served and locked areas with their stats -> chat @ functionality
+const allDataCombined = (req, res) => {
     const allServedAreas = areas_json_1.default
         .filter(area => area.isServed === true)
         .map((_a) => {
         var { geometry } = _a, rest = __rest(_a, ["geometry"]);
-        const stats = stats_json_1.default.find(stat => Number(stat.pinCode) == rest.pinCode);
-        return Object.assign(Object.assign({}, rest), { stats: stats || null // attach stats or null if not found
-         });
+        const stats = stats_json_1.default.find(stat => Number(stat.pinCode) === Number(rest.pinCode));
+        return Object.assign(Object.assign({}, rest), { stats: stats || null });
     });
-    if (!allServedAreas || allServedAreas.length === 0) {
-        return res.status(404).json({
-            success: false,
-            message: "No served areas found",
-            allServedAreas: []
-        });
-    }
+    const allLockedAreas = areas_json_1.default
+        .filter(area => area.isServed === false)
+        .map((_a) => {
+        var { geometry } = _a, rest = __rest(_a, ["geometry"]);
+        const lockedData = lockedArea_json_1.default.find(lock => Number(lock.pinCode) === Number(rest.pinCode));
+        return Object.assign(Object.assign({}, rest), { lockedData: lockedData || null });
+    });
     return res.status(200).json({
         success: true,
-        message: "Served areas fetched successfully",
-        allServedAreas
+        message: "Served and locked areas fetched successfully",
+        servedAreas: allServedAreas,
+        lockedAreas: allLockedAreas,
     });
 };
-exports.servedAreaWithData = servedAreaWithData;
+exports.allDataCombined = allDataCombined;
 const getSalaries = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const { pinCode } = req.body;
@@ -211,10 +187,9 @@ const getSalaries = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 message: "Error fetching data from Google Places API",
             });
         }
-        // Top 5 companies with logos
         const topCompanies = googleApiRes.data.results.slice(0, 5).map(company => ({
             name: company.name,
-            logo: company.icon, // Or use company.photos[0].photo_reference for a higher quality image
+            logo: company.icon,
             address: company.formatted_address || "",
         }));
         const names = googleApiRes.data.results.map(result => result.name.split(" ").join("-"));
@@ -310,14 +285,25 @@ const getSalaries = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
 exports.getSalaries = getSalaries;
 const getRentPrice = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
+    const defaultRentBuckets = {
+        upto10k: 0,
+        "10to20k": 0,
+        "20to30k": 0,
+        "30to40k": 0,
+        above40k: 0,
+    };
     try {
         const { pinCode } = req.body;
         if (!pinCode) {
             return res.status(400).json({ message: "Pin code is required" });
         }
-        const areaName = (_a = areas_json_1.default.find(area => area.pinCode == pinCode)) === null || _a === void 0 ? void 0 : _a.name;
+        const areaName = (_a = areas_json_1.default.find((area) => area.pinCode == pinCode)) === null || _a === void 0 ? void 0 : _a.name;
         if (!areaName) {
-            return res.status(404).json({ message: "Area not found for the given pin code" });
+            return res.status(404).json({
+                message: "Area not found for the given pin code",
+                rentBuckets: defaultRentBuckets,
+                properties: [],
+            });
         }
         const fetchProperties = axios_1.default.post("https://swrapi.sowerent.com/api/v1/website/property/listings", {
             pageSize: 100,
@@ -332,26 +318,25 @@ const getRentPrice = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             furnished: "",
             managedBy: "",
             availability: null,
-            sortBy: ""
+            sortBy: "",
         });
         const [response] = yield Promise.all([fetchProperties]);
-        const properties = (_b = response === null || response === void 0 ? void 0 : response.data) === null || _b === void 0 ? void 0 : _b.result;
-        if (!properties || properties.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "No properties found for the given area"
+        const rawProperties = ((_b = response === null || response === void 0 ? void 0 : response.data) === null || _b === void 0 ? void 0 : _b.result) || [];
+        if (rawProperties.length === 0) {
+            return res.status(200).json({
+                success: true,
+                message: "No properties found for the given area",
+                areaName,
+                rentBuckets: defaultRentBuckets,
+                properties: [],
             });
         }
-        const flatRents = properties.map(p => p.flatRent || 0);
-        // Categorize rent values
-        const rentBuckets = {
-            upto10k: 0,
-            "10to20k": 0,
-            "20to30k": 0,
-            "30to40k": 0,
-            above40k: 0
-        };
-        for (const rent of flatRents) {
+        const properties = rawProperties.map((p, index) => ({
+            id: index + 1,
+            rent: p.flatRent || 0,
+        }));
+        const rentBuckets = Object.assign({}, defaultRentBuckets);
+        for (const { rent } of properties) {
             if (rent <= 10000)
                 rentBuckets.upto10k++;
             else if (rent <= 20000)
@@ -364,16 +349,21 @@ const getRentPrice = (req, res) => __awaiter(void 0, void 0, void 0, function* (
                 rentBuckets.above40k++;
         }
         return res.status(200).json({
+            success: true,
             message: "Rent summary fetched successfully",
             areaName,
-            rentBuckets
+            rentBuckets,
+            properties,
         });
     }
     catch (error) {
         console.error("Error fetching flat rents:", error.message);
-        return res.status(500).json({
-            message: "Failed to fetch flat rents",
-            error: error.message
+        return res.status(200).json({
+            success: false,
+            message: "Error occurred while fetching rent data",
+            areaName: "Unknown",
+            rentBuckets: defaultRentBuckets,
+            properties: [],
         });
     }
 });

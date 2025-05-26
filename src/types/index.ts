@@ -33,7 +33,6 @@ export interface AreaStatsResponse extends BaseResponse {
 }
 
 export interface AreaStats {
-  totalOrders: number;
   avgOrderValue: number;
   avgDeliveryTime: number;
   deliveryDelay: number;

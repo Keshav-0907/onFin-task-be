@@ -1,44 +1,56 @@
 [
-    {
-        "pinCode": "560022",
-        "populationDensity": 16000,
-        "medianHouseholdIncome": 800000,
-        "purchasingPower": 0.8
-    },
-    {
-        "pinCode": "560107",
-        "populationDensity": 20000,
-        "medianHouseholdIncome": 900000,
-        "purchasingPower": 0.85
-    },
-    {
-        "pinCode": "560094",
-        "populationDensity": 30000,
-        "medianHouseholdIncome": 10000,
-        "purchasingPower": 0.855
-    },
-    {
-        "pinCode": "560048",
-        "populationDensity": 30000,
-        "medianHouseholdIncome": 10000,
-        "purchasingPower": 0.855
-    },
-    {
-        "pinCode": "560066",
-        "populationDensity": 30000,
-        "medianHouseholdIncome": 10000,
-        "purchasingPower": 0.855
-    },
-    {
-        "pinCode": "560102",
-        "populationDensity": 30000,
-        "medianHouseholdIncome": 10000,
-        "purchasingPower": 0.855
-    },
-    {
-        "pinCode": "560076",
-        "populationDensity": 30000,
-        "medianHouseholdIncome": 10000,
-        "purchasingPower": 0.855
-    }
+  {
+    "pinCode": 560022,
+    "populationDensity": 16000,
+    "medianHouseholdIncome": 800000,
+    "purchasingPower": 0.8
+  },
+  {
+    "pinCode": 560076,
+    "populationDensity": 20000,
+    "medianHouseholdIncome": 900000,
+    "purchasingPower": 0.85
+  },
+  {
+    "pinCode": 560100,
+    "populationDensity": 28000,
+    "medianHouseholdIncome": 720000,
+    "purchasingPower": 0.78
+  },
+  {
+    "pinCode": 560102,
+    "populationDensity": 30000,
+    "medianHouseholdIncome": 850000,
+    "purchasingPower": 0.82
+  },
+  {
+    "pinCode": 560067,
+    "populationDensity": 29000,
+    "medianHouseholdIncome": 790000,
+    "purchasingPower": 0.81
+  },
+  {
+    "pinCode": 560036,
+    "populationDensity": 26000,
+    "medianHouseholdIncome": 810000,
+    "purchasingPower": 0.83
+  },
+  {
+    "pinCode": 560076,
+    "populationDensity": 31000,
+    "medianHouseholdIncome": 880000,
+    "purchasingPower": 0.86
+  },
+  {
+    "pinCode": 560066,
+    "populationDensity": 31000,
+    "medianHouseholdIncome": 880000,
+    "purchasingPower": 0.86
+  },
+  {
+    "pinCode": 560103,
+    "populationDensity": 31000,
+    "medianHouseholdIncome": 880000,
+    "purchasingPower": 0.86
+  }
 ]
