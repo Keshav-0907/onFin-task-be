@@ -274,6 +274,14 @@ const getSalaries = async (req, res) => {
 };
 
 const getRentPrice = async (req, res) => {
+    const defaultRentBuckets = {
+        upto10k: 0,
+        "10to20k": 0,
+        "20to30k": 0,
+        "30to40k": 0,
+        above40k: 0
+    };
+
     try {
         const { pinCode } = req.body;
 
@@ -284,7 +292,10 @@ const getRentPrice = async (req, res) => {
         const areaName = AllAreas.find(area => area.pinCode == pinCode)?.name;
 
         if (!areaName) {
-            return res.status(404).json({ message: "Area not found for the given pin code" });
+            return res.status(404).json({
+                message: "Area not found for the given pin code",
+                rentBuckets: defaultRentBuckets
+            });
         }
 
         const fetchProperties = axios.post(
@@ -307,26 +318,20 @@ const getRentPrice = async (req, res) => {
         );
 
         const [response] = await Promise.all([fetchProperties]);
-
         const properties = response?.data?.result;
 
         if (!properties || properties.length === 0) {
-            return res.status(404).json({ 
-                success: false,
-                message: "No properties found for the given area"
-             });
+            return res.status(200).json({
+                success: true,
+                message: "No properties found for the given area",
+                areaName,
+                rentBuckets: defaultRentBuckets
+            });
         }
 
         const flatRents = properties.map(p => p.flatRent || 0);
 
-        // Categorize rent values
-        const rentBuckets = {
-            upto10k: 0,
-            "10to20k": 0,
-            "20to30k": 0,
-            "30to40k": 0,
-            above40k: 0
-        };
+        const rentBuckets = { ...defaultRentBuckets };
 
         for (const rent of flatRents) {
             if (rent <= 10000) rentBuckets.upto10k++;
@@ -337,17 +342,21 @@ const getRentPrice = async (req, res) => {
         }
 
         return res.status(200).json({
+            success: true,
             message: "Rent summary fetched successfully",
             areaName,
             rentBuckets
         });
     } catch (error) {
         console.error("Error fetching flat rents:", error.message);
-        return res.status(500).json({
-            message: "Failed to fetch flat rents",
-            error: error.message
+        return res.status(200).json({
+            success: false,
+            message: "Error occurred while fetching rent data",
+            areaName: "Unknown",
+            rentBuckets: defaultRentBuckets
         });
     }
 };
+
 
 export { servedArea, areaStats, getAllAreas, getSalaries, getRentPrice, servedAreaWithData }
